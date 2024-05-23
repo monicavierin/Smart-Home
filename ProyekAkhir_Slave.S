@@ -6,7 +6,7 @@
 main:
   SBI DDRB, 3         ; Set PB3 as output (LED)
   SBI DDRD, 7         ; Set PD7 as output (fan motor)
-
+  
   CLR R24             ; Clear R24
   STS UCSR0A, R24     ; Clear UCSR0A register
   STS UBRR0H, R24     ; Clear UBRR0H register
@@ -17,12 +17,22 @@ main:
   LDI R24, (1<<UCSZ00) | (1<<UCSZ01) ; Load USART character size flags into R24
   STS UCSR0C, R24     ; Store R24 into UCSR0C register
 
-call_sub:
+loop1:
   RCALL I2C_init      ; Call I2C_init subroutine
   RCALL I2C_listen    ; Call I2C_listen subroutine
   RCALL I2C_read      ; Call I2C_read subroutine
   RCALL printval      ; Call printval subroutine
-  RJMP call_sub
+  RCALL space         ; Call space subroutine
+  MOV R27, R26        ; Copy R26 into R27
+  RCALL check_temp    ; Call check_temp subroutine
+  RJMP loop2          ; Jump to loop2
+
+loop2:
+  LDI R26, 98        
+  RCALL printval      ; Call printval subroutine
+  RCALL newline       ; Call newline subroutine
+  RCALL check_light   ; Call check_light subroutine
+  RJMP loop1          ; Jump to loop1
 
 I2C_init:
   LDI R21, 0b10010000 ; Load 0b10010000 into R21
@@ -50,9 +60,19 @@ wt:
   LDS R26, TWDR       ; Load value from TWDR register into R26
   RET
 
+printval:
+  MOV R16, R26        ; Copy R26 into R16
+  RCALL ASCII_MSD     ; Call ASCII_MSD subroutine
+  RCALL LCD_buffer    ; Call LCD_buffer subroutine
+  STS UDR0, R16       ; Store R16 into USART0 data register
+  RCALL ASCII_LSD     ; Call ASCII_LSD subroutine
+  RCALL LCD_buffer    ; Call LCD_buffer subroutine
+  STS UDR0, R16       ; Store R16 into USART0 data register
+  RET
+
 LCD_buffer:
-  LDS R26, UCSR0A     ; Load status register of USART0 into R26
-  SBRS R26, UDRE0     ; Skip next instruction if USART data buffer is not empty
+  LDS R24, UCSR0A     ; Load status register of USART0 into R24
+  SBRS R24, UDRE0     ; Skip next instruction if USART data buffer is not empty
   RJMP LCD_buffer     ; Loop back to LCD_buffer
   RET
 
@@ -83,31 +103,37 @@ A_F_D0:               ; Label A_F_D0
   SUBI R16, -7        ; Subtract -7 from R16
   RJMP l2             ; Jump to l2
 
-newline:
+space:
   RCALL LCD_buffer    ; Call LCD_buffer subroutine
-  LDI R16, 0x0A       ; Load ASCII value for new line character into R16
-  STS UDR0, R16       ; Store R16 into USART0 data register
-  RCALL LCD_buffer    ; Call LCD_buffer subroutine
-  LDI R16, 0x0D       ; Load ASCII value for carriage return character into R16
-  STS UDR0, R16       ; Store R16 into USART0 data register
+  LDI R25, 0x20       ; Load ASCII value for space character into R25
+  STS UDR0, R25       ; Store R25 into USART0 data register
   RET
 
-printval:
-  MOV R16, R26        ; Copy R26 into R16
-  RCALL ASCII_MSD     ; Call ASCII_MSD subroutine
+newline:
   RCALL LCD_buffer    ; Call LCD_buffer subroutine
-  STS UDR0, R16       ; Store R16 into USART0 data register
-  RCALL ASCII_LSD     ; Call ASCII_LSD subroutine
+  LDI R24, 0x0A       ; Load ASCII value for new line character into R24
+  STS UDR0, R24       ; Store R24 into USART0 data register
   RCALL LCD_buffer    ; Call LCD_buffer subroutine
-  STS UDR0, R16       ; Store R16 into USART0 data register
-  RCALL newline       ; Call newline subroutine
+  LDI R24, 0x0D       ; Load ASCII value for carriage return character into R24
+  STS UDR0, R24       ; Store R24 into USART0 data register
+  RET
 
-  ; Check temperature value and control fan
-  CPI R26, 30         ; Compare value of R26 with 30
+check_temp:
+  CPI R27, 30         ; Compare value of R27 with 30
   BRSH fan_on         ; Branch if value is same or higher than 30
   CBI PORTD, 7        ; Turn off the fan
-  RJMP call_sub
+  RET
 
 fan_on:
   SBI PORTD, 7        ; Turn on the fan
-  RJMP call_sub       ; Return to the call_sub
+  RET
+
+check_light:
+  CPI R26, 100        ; Compare value of R26 with 100
+  BRSH LED_off        ; Branch if value is same or higher than 100
+  SBI PORTB, 3        ; Turn on the LED
+  RET
+
+LED_off:
+  CBI PORTB, 3        ; Turn off the LED
+  RET
